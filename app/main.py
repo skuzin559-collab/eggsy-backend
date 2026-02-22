@@ -1,57 +1,52 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-import sqlite3
+from typing import Dict
+import uuid
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Временное хранилище игроков (потом заменим на БД)
+players: Dict[str, dict] = {}
 
-def init_db():
-    conn = sqlite3.connect("progress.db")
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS save (
-            id TEXT PRIMARY KEY,
-            gems INTEGER
-        );
-    """)
-    conn.commit()
-    conn.close()
+class PlayerCreate(BaseModel):
+    nickname: str
 
-init_db()
+class PlayerUpdate(BaseModel):
+    coins: int
 
-class Progress(BaseModel):
-    user_id: str
-    gems: int
 
 @app.get("/")
 def root():
-    return {"status": "Eggsyverse backend running"}
+    return {"message": "Eggsy сервер работает 🚀"}
 
-@app.post("/save")
-def save_progress(p: Progress):
-    conn = sqlite3.connect("progress.db")
-    c = conn.cursor()
-    c.execute("""
-        INSERT INTO save (id, gems)
-        VALUES (?, ?)
-        ON CONFLICT(id) DO UPDATE SET gems=excluded.gems
-    """, (p.user_id, p.gems))
-    conn.commit()
-    conn.close()
-    return {"status": "saved"}
 
-@app.get("/load/{user_id}")
-def load_progress(user_id: str):
-    conn = sqlite3.connect("progress.db")
-    c = conn.cursor()
-    c.execute("SELECT gems FROM save WHERE id=?", (user_id,))
-    row = c.fetchone()
-    conn.close()
-    return {"gems": row[0] if row else 0}
+# 🔹 Регистрация игрока
+@app.post("/register")
+def register(player: PlayerCreate):
+    player_id = str(uuid.uuid4())
+
+    players[player_id] = {
+        "nickname": player.nickname,
+        "coins": 0
+    }
+
+    return {"player_id": player_id}
+
+
+# 🔹 Получить данные игрока
+@app.get("/player/{player_id}")
+def get_player(player_id: str):
+    if player_id not in players:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+
+    return players[player_id]
+
+
+# 🔹 Обновить монеты
+@app.post("/player/{player_id}/update")
+def update_player(player_id: str, data: PlayerUpdate):
+    if player_id not in players:
+        raise HTTPException(status_code=404, detail="Игрок не найден")
+
+    players[player_id]["coins"] = data.coins
+    return {"status": "updated"}
